@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""F1 baseline: run MMLU-ProX-Lite (en/es/zh) against the local llama-server.
+
+- Loads li-lab/MMLU-ProX-Lite test (588 items per language) offline from the
+  local HF cache, pinned to revision e82aafb9460529687d3c7e51b401d8dd1dd309dd.
+- Zero-shot. Lists only non-empty options, labeled A..J; the gold letter is
+  remapped to that listing. Prompt per language: think step by step, end with a
+  final line 'Answer: X' / 'Respuesta: X' / '答案：X'.
+- Interleaves by question_id (qid-en, qid-es, qid-zh, next qid...).
+- POSTs /v1/chat/completions: temperature 1.0, top_p 0.95, top_k 20, seed 42,
+  max_tokens 16384 (no reasoning_effort).
+- Appends one JSON line per item to results/proxlite_raw.jsonl:
+  id (question_id), lang, gold (letter), content, reasoning_content,
+  finish_reason, usage, timings, wall (seconds), plus category and n_options.
+  Resumable: skips (id, lang) already present.
+- Saves GET /props to results/server_props_proxlite.json before the first item.
+
+Run under nohup; logs go wherever stdout/stderr are redirected.
+"""
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+# The dataset is already in the HF cache; never hit the Hub.
+os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+import requests
+from datasets import load_dataset
+
+ROOT = Path(__file__).resolve().parents[1]
+RESULTS_DIR = ROOT / "results"
+RAW_OUT = RESULTS_DIR / "proxlite_raw.jsonl"
+PROPS_OUT = RESULTS_DIR / "server_props_proxlite.json"
+BASE = "http://127.0.0.1:8092"
+
+DATASET = "li-lab/MMLU-ProX-Lite"
+REVISION = "e82aafb9460529687d3c7e51b401d8dd1dd309dd"
+LANGS = ["en", "es", "zh"]
+LETTERS = "ABCDEFGHIJ"
+PROMPTS = {
+    "en": "Answer the following multiple-choice question. Think step by step, then end "
+          "with a final line 'Answer: X', where X is the letter of the correct option.",
+    "es": "Responde la siguiente pregunta de opción múltiple. Piensa paso a paso y termina "
+          "con una línea final 'Respuesta: X', donde X es la letra de la opción correcta.",
+    "zh": "回答下面的选择题。请逐步思考，最后一行写 '答案：X'，其中 X 是正确选项的字母。",
+}
+LABELS = {
+    "en": ("Question", "Options"),
+    "es": ("Pregunta", "Opciones"),
+    "zh": ("问题", "选项"),
+}
+
+GENERATION = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "seed": 42,
+    "max_tokens": 16384,
+}
+
+
+def log(msg):
+    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] {msg}", flush=True)
+
+
+def load_items():
+    """Return {lang: {question_id: item}} with question, options, gold letter, category."""
+    items = {}
+    for lang in LANGS:
+        try:
+            ds = load_dataset(DATASET, lang, split="test", revision=REVISION)
+        except Exception as e:
+            print(f"ERROR: failed to load {DATASET} config={lang!r} rev={REVISION[:8]} "
+                  f"from cache: {e}", file=sys.stderr)
+            raise
+        items[lang] = {}
+        for row in ds:
+            kept = [k for k in range(10) if (row[f"option_{k}"] or "").strip()]
+            if row["answer_index"] not in kept:
+                raise SystemExit(f"{lang} qid={row['question_id']}: answer on an empty option")
+            items[lang][row["question_id"]] = {
+                "question": row["question"],
+                "options": [row[f"option_{k}"] for k in kept],
+                "gold": LETTERS[kept.index(row["answer_index"])],
+                "category": row["category"],
+            }
+    # Alignment sanity: same ids, gold and option count across languages.
+    for lang in LANGS[1:]:
+        if set(items[lang]) != set(items["en"]):
+            raise SystemExit(f"question_id sets differ between en and {lang}")
+    for qid, ref in items["en"].items():
+        for lang in LANGS[1:]:
+            other = items[lang][qid]
+            if (other["gold"], len(other["options"])) != (ref["gold"], len(ref["options"])):
+                raise SystemExit(f"misaligned qid={qid}: en={ref['gold']}/{len(ref['options'])} "
+                                 f"{lang}={other['gold']}/{len(other['options'])}")
+    return items
+
+
+def build_prompt(lang, item):
+    question_l, options_l = LABELS[lang]
+    options = "\n".join(f"{LETTERS[k]}) {text}" for k, text in enumerate(item["options"]))
+    return f"{PROMPTS[lang]}\n\n{question_l}: {item['question']}\n\n{options_l}:\n{options}"
+
+
+def make_record(qid, lang, item, data, wall):
+    choice = data["choices"][0]
+    msg = choice.get("message") or {}
+    return {
+        "id": qid,
+        "lang": lang,
+        "gold": item["gold"],
+        "content": msg.get("content"),
+        "reasoning_content": msg.get("reasoning_content"),
+        "finish_reason": choice.get("finish_reason"),
+        "usage": data.get("usage"),
+        "timings": data.get("timings"),
+        "wall": wall,
+        "category": item["category"],
+        "n_options": len(item["options"]),
+    }
+
+
+def done_pairs():
+    done = set()
+    if RAW_OUT.exists():
+        with RAW_OUT.open(encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                    done.add((rec["id"], rec["lang"]))
+                except (json.JSONDecodeError, KeyError):
+                    pass
+    return done
+
+
+def main():
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Save server props before the first item (idempotent: only if absent).
+    if not PROPS_OUT.exists():
+        r = requests.get(f"{BASE}/props", timeout=30)
+        r.raise_for_status()
+        PROPS_OUT.write_text(json.dumps(r.json(), indent=2, ensure_ascii=False), encoding="utf-8")
+        log(f"saved server props -> {PROPS_OUT.name}")
+
+    items = load_items()
+    qids = sorted(items["en"])
+    done = done_pairs()
+    pending = [(q, l) for q in qids for l in LANGS if (q, l) not in done]
+    total = len(qids) * len(LANGS)
+    log(f"question_id {qids[0]}..{qids[-1]} ({len(qids)} ids), langs {LANGS}; "
+        f"done={len(done)} pending={len(pending)} total={total}")
+    if not pending:
+        log("nothing to do.")
+        return
+
+    n_ok = 0
+    for n, (qid, lang) in enumerate(pending, start=1):
+        item = items[lang][qid]
+        payload = {
+            "messages": [{"role": "user", "content": build_prompt(lang, item)}],
+            "temperature": GENERATION["temperature"],
+            "top_p": GENERATION["top_p"],
+            "top_k": GENERATION["top_k"],
+            "seed": GENERATION["seed"],
+            "max_tokens": GENERATION["max_tokens"],
+        }
+        try:
+            t0 = time.monotonic()
+            r = requests.post(f"{BASE}/v1/chat/completions", json=payload, timeout=1800)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            log(f"id={qid} {lang}: FAILED ({e}); will retry next run")
+            continue
+        wall = time.monotonic() - t0
+        rec = make_record(qid, lang, item, data, wall)
+        with RAW_OUT.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        n_ok += 1
+        tt = rec.get("timings") or {}
+        n_pr = (rec.get("usage") or {}).get("completion_tokens", 0)
+        log(f"({n}/{len(pending)}) id={qid} {lang} finish={rec['finish_reason']} "
+            f"completion={n_pr} wall={wall:.1f}s "
+            f"predicted_per_s={tt.get('predicted_per_second', 0):.2f} "
+            f"draft={tt.get('draft_n', 0)}/{tt.get('draft_n_accepted', 0)}")
+    log(f"run finished: {n_ok}/{len(pending)} succeeded; total in file={len(done) + n_ok}/{total}")
+
+
+if __name__ == "__main__":
+    main()
