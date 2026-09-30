@@ -13,6 +13,10 @@ RAW=results/belebele_raw.jsonl
 EXPECTED=1464
 cd "$ROOT" || exit 1
 
+# pgrep pattern for real runner processes only (not editors, greps or shells
+# that merely mention the script name).
+RUNNER_RE='^[^ ]*python[0-9.]* (-u )?scripts/run_'
+
 log() { echo "[$(date +%Y-%m-%dT%H:%M:%S)] chain-belebele: $*"; }
 
 count_unique() {
@@ -31,7 +35,7 @@ print(len(seen))
 EOF
 }
 
-any_runner() { pgrep -f "scripts/run_[a-z_]+\.py" >/dev/null; }
+any_runner() { pgrep -f "${RUNNER_RE}[a-z_]+\.py" >/dev/null; }
 
 # Match on the command line too, so a reused PID doesn't keep us waiting forever.
 alive() { tr '\0' ' ' 2>/dev/null < "/proc/$1/cmdline" | grep -q run_belebele; }
@@ -40,7 +44,7 @@ alive() { tr '\0' ' ' 2>/dev/null < "/proc/$1/cmdline" | grep -q run_belebele; }
 log "waiting for run_belebele.py to start (poll every 30 s)"
 PID=""
 while :; do
-    PID=$(pgrep -f "scripts/run_belebele\.py" | head -1)
+    PID=$(pgrep -f "${RUNNER_RE}(belebele)\.py" | head -1)
     [ -n "$PID" ] && break
     # Already finished before we started watching: nothing to wait for.
     if ! any_runner && [ "$(count_unique)" -eq "$EXPECTED" ]; then
@@ -65,7 +69,7 @@ log "$RAW: ${n:-?} unique id+lang records (expected $EXPECTED)"
 # Never start a second copy next to one that is already running.
 if any_runner; then
     log "a run_*.py process is already running; launching nothing"
-    pgrep -af "scripts/run_[a-z_]+\.py"
+    pgrep -af "${RUNNER_RE}[a-z_]+\.py"
     exit 1
 fi
 
