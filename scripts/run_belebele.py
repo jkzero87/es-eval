@@ -16,9 +16,15 @@
   Resumable: skips (id, lang) already present.
 - Saves GET /props to results/server_props_belebele.json before the first item.
 
+Optional: --langs en,es (subset), --system FILE (sent as a system message),
+--tag NAME (writes results/belebele_raw.<tag>.jsonl and server_props.<tag>.json;
+records then also carry "system"/"tag"). No flags = the baseline run.
+
 Run under nohup; logs go wherever stdout/stderr are redirected.
 """
+import argparse
 import json
+import re
 import os
 import sys
 import time
@@ -65,6 +71,27 @@ GENERATION = {
 
 def log(msg):
     print(f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] {msg}", flush=True)
+
+
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--langs", default=",".join(LANGS),
+                    help=f"comma-separated subset of {','.join(LANGS)} (default: all)")
+    ap.add_argument("--system", type=Path, metavar="FILE",
+                    help="text file sent as a system message (requires --tag)")
+    ap.add_argument("--tag", metavar="NAME",
+                    help="write results/belebele_raw.<tag>.jsonl and server_props.<tag>.json")
+    args = ap.parse_args(argv)
+    langs = [l for l in LANGS if l in {x.strip() for x in args.langs.split(",")}]
+    unknown = {x.strip() for x in args.langs.split(",")} - set(LANGS) - {""}
+    if unknown or not langs:
+        ap.error(f"--langs must be a non-empty subset of {','.join(LANGS)}, got {args.langs!r}")
+    if args.tag is not None and not re.fullmatch(r"[A-Za-z0-9_.-]+", args.tag):
+        ap.error("--tag may only contain letters, digits, '_', '-' and '.'")
+    if args.system is not None and args.tag is None:
+        ap.error("--system requires --tag, so tagged runs never mix into the baseline file")
+    system = args.system.read_text(encoding="utf-8").strip() if args.system is not None else None
+    return langs, system, args.tag
 
 
 def load_items():
@@ -129,34 +156,41 @@ def make_record(i, lang, item, data, wall):
     }
 
 
-def done_pairs():
+def done_pairs(raw_out, langs):
     done = set()
-    if RAW_OUT.exists():
-        with RAW_OUT.open(encoding="utf-8") as f:
+    if raw_out.exists():
+        with raw_out.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     rec = json.loads(line)
-                    done.add((rec["id"], rec["lang"]))
+                    if rec["lang"] in langs:
+                        done.add((rec["id"], rec["lang"]))
                 except (json.JSONDecodeError, KeyError):
                     pass
     return done
 
 
 def main():
+    langs, system, tag = parse_args()
+    raw_out = RESULTS_DIR / f"belebele_raw.{tag}.jsonl" if tag else RAW_OUT
+    props_out = RESULTS_DIR / f"server_props.{tag}.json" if tag else PROPS_OUT
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    if tag:
+        log(f"tag={tag} -> {raw_out.name}, {props_out.name}; langs={langs}; "
+            f"system={'none' if system is None else repr(system[:80]) + f' ({len(system)} chars)'}")
     # Save server props before the first item (idempotent: only if absent).
-    if not PROPS_OUT.exists():
+    if not props_out.exists():
         r = requests.get(f"{BASE}/props", timeout=30)
         r.raise_for_status()
-        PROPS_OUT.write_text(json.dumps(r.json(), indent=2, ensure_ascii=False), encoding="utf-8")
-        log(f"saved server props -> {PROPS_OUT.name}")
+        props_out.write_text(json.dumps(r.json(), indent=2, ensure_ascii=False), encoding="utf-8")
+        log(f"saved server props -> {props_out.name}")
 
     items = load_items()
     max_id = max(max(items[l]) for l in LANGS)
-    done = done_pairs()
-    pending = [(i, l) for i in range(1, max_id + 1) for l in LANGS if (i, l) not in done]
-    total = max_id * len(LANGS)
-    log(f"ids 1..{max_id}, langs {LANGS}; done={len(done)} pending={len(pending)} total={total}")
+    done = done_pairs(raw_out, langs)
+    pending = [(i, l) for i in range(1, max_id + 1) for l in langs if (i, l) not in done]
+    total = max_id * len(langs)
+    log(f"ids 1..{max_id}, langs {langs}; done={len(done)} pending={len(pending)} total={total}")
     if not pending:
         log("nothing to do.")
         return
@@ -165,7 +199,8 @@ def main():
     for n, (i, lang) in enumerate(pending, start=1):
         item = items[lang][i]
         payload = {
-            "messages": [{"role": "user", "content": build_prompt(lang, item)}],
+            "messages": ([{"role": "system", "content": system}] if system is not None else [])
+                        + [{"role": "user", "content": build_prompt(lang, item)}],
             "temperature": GENERATION["temperature"],
             "top_p": GENERATION["top_p"],
             "top_k": GENERATION["top_k"],
@@ -182,7 +217,11 @@ def main():
             continue
         wall = time.monotonic() - t0
         rec = make_record(i, lang, item, data, wall)
-        with RAW_OUT.open("a", encoding="utf-8") as f:
+        if system is not None:
+            rec["system"] = system
+        if tag:
+            rec["tag"] = tag
+        with raw_out.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         n_ok += 1
         tt = rec.get("timings") or {}

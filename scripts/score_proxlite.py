@@ -9,6 +9,8 @@
   score_mgsm.py, plus %unparsed, per-category accuracy per language, and
   paired en-vs-es / en-vs-zh counts with exact McNemar p-values.
 - Reasoning tokens counted via POST /tokenize (skip with --no-tokenize).
+- --raw PATH scores another file (e.g. a tagged run); --baseline PATH adds a
+  paired baseline-vs-this table per language with exact McNemar p.
 """
 import argparse
 import json
@@ -19,8 +21,7 @@ from pathlib import Path
 
 import requests
 
-from audit_mgsm import mcnemar_exact
-from score_mgsm import DETECT_COLS, LANGS, TOKENIZE_URL, detect
+from score_mgsm import DETECT_COLS, LANGS, TOKENIZE_URL, detect, mcnemar_exact, print_paired_vs_baseline
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_IN = ROOT / "results" / "proxlite_raw.jsonl"
@@ -42,11 +43,18 @@ def parse_letter(text):
     return m.group(1) if m else None
 
 
+def correct(record):
+    pred = parse_letter(record.get("content"))
+    return pred is not None and pred == record.get("gold")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw", type=Path, default=RAW_IN)
     ap.add_argument("--no-tokenize", action="store_true",
                     help="skip /tokenize calls (reasoning tokens reported as nan)")
+    ap.add_argument("--baseline", type=Path, metavar="PATH",
+                    help="pair against this raw file (same id + lang), e.g. results/proxlite_raw.jsonl")
     args = ap.parse_args()
 
     if not args.raw.exists():
@@ -151,6 +159,9 @@ def main():
         both_bad = len(common) - both_ok - en_only - other_only
         print(f"{other + ' vs en':<9} {len(common):>4} {both_ok:>6} {both_bad:>6} {en_only:>7} "
               f"{other_only:>7} {mcnemar_exact(en_only, other_only):>10.4g}")
+
+    if args.baseline:
+        print_paired_vs_baseline(ok, args.baseline, correct)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,6 @@ import json
 import os
 import sys
 import time
-from math import comb
 from pathlib import Path
 
 os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
@@ -25,7 +24,7 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 from datasets import load_dataset
 
-from score_mgsm import LANGS, correct, last_number
+from score_mgsm import LANGS, correct, last_number, mcnemar_exact
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_IN = ROOT / "results" / "mgsm_raw.jsonl"
@@ -39,15 +38,6 @@ def load_questions():
     return {lang: {i: row["question"] for i, row in
                    enumerate(load_dataset("juletxara/mgsm", lang, split="test"), start=1)}
             for lang in LANGS}
-
-
-def mcnemar_exact(b, c):
-    """Two-sided exact McNemar: binomial test of min(b, c) with n=b+c, p=0.5."""
-    n = b + c
-    if n == 0:
-        return 1.0
-    k = min(b, c)
-    return min(1.0, 2 * sum(comb(n, i) for i in range(k + 1)) / 2 ** n)
 
 
 def fmt_num(x):

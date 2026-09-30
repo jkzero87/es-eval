@@ -10,12 +10,18 @@
   sum drafted), % finish_reason=length, prompt-lang x reasoning-lang matrix.
 - From results/fertility.csv: per source, chars ratio es/en and
   tokens-per-char es vs en (splits 1.27 into translation vs tokenizer).
+- Options: --raw PATH (e.g. a tagged run), --no-tokenize, --baseline PATH
+  (paired baseline-vs-this table per language with exact McNemar p).
+Also home of the helpers shared by the other scorers (detect, mcnemar_exact,
+print_paired_vs_baseline).
 """
+import argparse
 import csv
 import json
 import re
 import statistics
 import sys
+from math import comb
 from pathlib import Path
 
 import requests
@@ -58,13 +64,54 @@ def correct(record):
     return pred is not None and gold is not None and abs(pred - float(gold)) < 1e-9
 
 
+def mcnemar_exact(b, c):
+    """Two-sided exact McNemar: binomial test of min(b, c) with n=b+c, p=0.5."""
+    n = b + c
+    if n == 0:
+        return 1.0
+    k = min(b, c)
+    return min(1.0, 2 * sum(comb(n, i) for i in range(k + 1)) / 2 ** n)
+
+
+def print_paired_vs_baseline(ok, baseline_path, correct_fn):
+    """Paired table: this file's per-(id, lang) correctness vs the baseline file's."""
+    base = {}
+    with Path(baseline_path).open(encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                r = json.loads(line)
+                base[(r["id"], r["lang"])] = correct_fn(r)
+    print(f"\n=== Paired vs baseline {Path(baseline_path).name} (same id + lang) ===")
+    print(f"{'lang':<5} {'n':>4} {'both✓':>6} {'both✗':>6} {'base✓ x✗':>9} {'x✓ base✗':>9} "
+          f"{'acc_base':>9} {'acc_this':>9} {'McNemar p':>10}")
+    for l in LANGS:
+        common = [k for k in ok if k[1] == l and k in base]
+        n = len(common)
+        base_only = sum(1 for k in common if base[k] and not ok[k])
+        this_only = sum(1 for k in common if ok[k] and not base[k])
+        both_ok = sum(1 for k in common if ok[k] and base[k])
+        both_bad = n - both_ok - base_only - this_only
+        acc_b = sum(base[k] for k in common) / n if n else float("nan")
+        acc_t = sum(ok[k] for k in common) / n if n else float("nan")
+        print(f"{l:<5} {n:>4} {both_ok:>6} {both_bad:>6} {base_only:>9} {this_only:>9} "
+              f"{acc_b:>9.4f} {acc_t:>9.4f} {mcnemar_exact(base_only, this_only):>10.4g}")
+
+
 def main():
-    if not RAW_IN.exists():
-        print(f"no {RAW_IN} yet", file=sys.stderr)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--raw", type=Path, default=RAW_IN)
+    ap.add_argument("--no-tokenize", action="store_true",
+                    help="skip /tokenize calls (reasoning tokens reported as nan)")
+    ap.add_argument("--baseline", type=Path, metavar="PATH",
+                    help="pair against this raw file (same id + lang), e.g. results/mgsm_raw.jsonl")
+    args = ap.parse_args()
+
+    if not args.raw.exists():
+        print(f"no {args.raw} yet", file=sys.stderr)
         sys.exit(1)
 
     records = []
-    with RAW_IN.open(encoding="utf-8") as f:
+    with args.raw.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -77,12 +124,14 @@ def main():
         "pps": [], "drafted": 0, "accepted": 0, "length": 0,
         "reasoning_lang": {}, "content_lang": {},
     } for l in LANGS}
+    ok = {}
 
     for rec in records:
         l = rec["lang"]
         bucket = per_lang[l]
         bucket["n"] += 1
-        if correct(rec):
+        ok[(rec["id"], l)] = correct(rec)
+        if ok[(rec["id"], l)]:
             bucket["correct"] += 1
         usage = rec.get("usage") or {}
         if "completion_tokens" in usage:
@@ -101,7 +150,7 @@ def main():
         cl = detect(rec.get("content"))
         bucket["content_lang"][cl] = bucket["content_lang"].get(cl, 0) + 1
         rc = rec.get("reasoning_content")
-        if rc and rc.strip():
+        if rc and rc.strip() and not args.no_tokenize:
             try:
                 r = requests.post(TOKENIZE_URL, json={"content": rc}, timeout=60)
                 r.raise_for_status()
@@ -131,6 +180,9 @@ def main():
         for l in LANGS:
             row = per_lang[l][field]
             print(f"{l:<8} " + "".join(f"{row.get(c, 0):>8}" for c in DETECT_COLS))
+
+    if args.baseline:
+        print_paired_vs_baseline(ok, args.baseline, correct)
 
     # --- fertility split ---
     if FERT_IN.exists():

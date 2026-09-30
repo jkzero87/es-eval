@@ -5,6 +5,8 @@
 - Same per-language table and prompt-language x detected-language matrices
   (content and reasoning_content) as score_mgsm.py.
 - Reasoning tokens counted via POST /tokenize (skip with --no-tokenize).
+- --raw PATH scores another file (e.g. a tagged run); --baseline PATH adds a
+  paired baseline-vs-this table per language with exact McNemar p.
 """
 import argparse
 import json
@@ -15,7 +17,7 @@ from pathlib import Path
 
 import requests
 
-from score_mgsm import DETECT_COLS, LANGS, TOKENIZE_URL, detect
+from score_mgsm import DETECT_COLS, LANGS, TOKENIZE_URL, detect, print_paired_vs_baseline
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_IN = ROOT / "results" / "belebele_raw.jsonl"
@@ -40,6 +42,8 @@ def main():
     ap.add_argument("--raw", type=Path, default=RAW_IN)
     ap.add_argument("--no-tokenize", action="store_true",
                     help="skip /tokenize calls (reasoning tokens reported as nan)")
+    ap.add_argument("--baseline", type=Path, metavar="PATH",
+                    help="pair against this raw file (same id + lang), e.g. results/belebele_raw.jsonl")
     args = ap.parse_args()
 
     if not args.raw.exists():
@@ -59,12 +63,14 @@ def main():
         "pps": [], "drafted": 0, "accepted": 0, "length": 0,
         "reasoning_lang": {}, "content_lang": {},
     } for l in LANGS}
+    ok = {}
 
     for rec in records:
         l = rec["lang"]
         bucket = per_lang[l]
         bucket["n"] += 1
-        if correct(rec):
+        ok[(rec["id"], l)] = correct(rec)
+        if ok[(rec["id"], l)]:
             bucket["correct"] += 1
         usage = rec.get("usage") or {}
         if "completion_tokens" in usage:
@@ -113,6 +119,9 @@ def main():
         for l in LANGS:
             row = per_lang[l][field]
             print(f"{l:<8} " + "".join(f"{row.get(c, 0):>8}" for c in DETECT_COLS))
+
+    if args.baseline:
+        print_paired_vs_baseline(ok, args.baseline, correct)
 
 
 if __name__ == "__main__":
