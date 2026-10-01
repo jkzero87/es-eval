@@ -115,3 +115,10 @@ audited above.
   - A similar gap points to the language itself.
   - Belebele is multiple choice over a given passage, not arithmetic, so the
     task difference is a caveat for either reading.
+
+### Follow-up result (2026-10-01, before lever-1 data)
+
+Belebele es − en reasoning gap +113.5 tokens, ratio 1.49, median per-id +62.0
+(MGSM: +114.4, 1.50, +23.5). Full table and caveats in
+`results/belebele_audit.md`. This was recorded after the decision rule was
+fixed and does not change it.
