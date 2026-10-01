@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ETA for a running benchmark: eta.py <raw.jsonl> <target> [--log FILE] [--window N]
+"""ETA for a running benchmark: eta.py <raw.jsonl> <target> [--log FILE] [--window N] [--json]
 
 Raw records carry no timestamp, so timing comes from the runner's log
 (results/<bench>_run.log by default, '<bench>' being the raw file name up to
@@ -9,7 +9,8 @@ the summed 'wall' of the last records (request time only, so optimistic).
 
 Prints records/hour and mean completion tokens over the last N records
 (default 30), unique id+lang done vs target, and the estimated finish time.
-Read-only; never talks to the server.
+--json prints the same as one JSON object (finish as local ISO time, null
+when complete). Read-only; never talks to the server.
 """
 import argparse
 import json
@@ -55,6 +56,7 @@ def main():
     ap.add_argument("target", type=int)
     ap.add_argument("--log", type=Path, help="runner log (default: <bench>_run.log next to RAW)")
     ap.add_argument("--window", type=int, default=30, help="records to average over (default 30)")
+    ap.add_argument("--json", action="store_true", help="print one JSON object")
     args = ap.parse_args()
 
     recs = load_records(args.raw) if args.raw.exists() else []
@@ -76,15 +78,25 @@ def main():
     else:
         sys.exit(f"{args.raw}: {done}/{args.target} done; not enough timing data for an ETA")
 
+    finish = None if remaining == 0 else anchor + timedelta(seconds=remaining * sec_per_rec)
+    if args.json:
+        print(json.dumps({
+            "file": str(args.raw), "done": done, "target": args.target, "remaining": remaining,
+            "sec_per_record": sec_per_rec, "records_per_hour": 3600 / sec_per_rec,
+            "mean_completion_tokens": sum(tokens) / len(tokens) if tokens else None,
+            "last_record": anchor.isoformat(timespec="seconds"),
+            "finish": finish.isoformat(timespec="seconds") if finish else None,
+            "source": source,
+        }))
+        return
     print(f"file          {args.raw}")
     print(f"done          {done}/{args.target} unique id+lang ({100 * done / args.target:.1f}%)")
     print(f"rate          {3600 / sec_per_rec:.0f} records/h ({sec_per_rec:.1f} s/record; {source})")
     if tokens:
         print(f"completion    {sum(tokens) / len(tokens):.0f} tokens mean over last {len(tokens)}")
-    if remaining == 0:
+    if finish is None:
         print("finish        complete")
     else:
-        finish = anchor + timedelta(seconds=remaining * sec_per_rec)
         left = finish - datetime.now()
         print(f"finish        {finish:%Y-%m-%d %H:%M} ({remaining} left, "
               f"~{max(left.total_seconds(), 0) / 3600:.1f} h from now; last record {anchor:%H:%M:%S})")

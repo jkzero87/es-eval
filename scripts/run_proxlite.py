@@ -22,6 +22,10 @@ records then also carry "system"/"tag"). No flags = the baseline run.
 at least 1 per category, seed 42), each in every selected language; the ids
 are saved to results/proxlite_subset_<N>.txt. Records are unchanged, so a
 later run without --limit on the same file just resumes the rest.
+--keep-done (with --limit) forces every id already done in all selected
+languages into the subset (raising N if needed; per-category allocation never
+drops below a category's finished ids) and fills the rest as above; the ids
+go to results/proxlite_subset_<n>_keepdone.txt.
 
 Run under nohup; logs go wherever stdout/stderr are redirected.
 """
@@ -88,6 +92,8 @@ def parse_args(argv=None):
                     help="write results/proxlite_raw.<tag>.jsonl and server_props.<tag>.json")
     ap.add_argument("--limit", type=int, metavar="N",
                     help="run only N question_ids, stratified by category (seed 42)")
+    ap.add_argument("--keep-done", action="store_true",
+                    help="with --limit: include every id already done in all selected languages")
     args = ap.parse_args(argv)
     langs = [l for l in LANGS if l in {x.strip() for x in args.langs.split(",")}]
     unknown = {x.strip() for x in args.langs.split(",")} - set(LANGS) - {""}
@@ -99,8 +105,10 @@ def parse_args(argv=None):
         ap.error("--system requires --tag, so tagged runs never mix into the baseline file")
     if args.limit is not None and args.limit < 1:
         ap.error("--limit must be a positive integer")
+    if args.keep_done and args.limit is None:
+        ap.error("--keep-done requires --limit")
     system = args.system.read_text(encoding="utf-8").strip() if args.system is not None else None
-    return langs, system, args.tag, args.limit
+    return langs, system, args.tag, args.limit, args.keep_done
 
 
 def load_items():
@@ -137,9 +145,11 @@ def load_items():
     return items
 
 
-def stratified_subset(items, n, seed=SUBSET_SEED):
+def stratified_subset(items, n, seed=SUBSET_SEED, keep=frozenset()):
     """Pick n question_ids, allocated to categories in proportion to their size
-    (largest remainder, at least 1 each), sampled with a fixed seed. Sorted."""
+    (largest remainder, at least 1 each), sampled with a fixed seed. Sorted.
+    Ids in keep are always chosen: a category gets at least its kept ids and n
+    grows if they need more room. Empty keep = the plain stratified subset."""
     by_cat = {}
     for qid, item in items.items():
         by_cat.setdefault(item["category"], []).append(qid)
@@ -147,10 +157,13 @@ def stratified_subset(items, n, seed=SUBSET_SEED):
     total = len(items)
     if not len(cats) <= n <= total:
         raise SystemExit(f"--limit must be between {len(cats)} (one per category) and {total}, got {n}")
+    kept = {c: sorted(q for q in by_cat[c] if q in keep) for c in cats}
+    floor = {c: max(1, len(kept[c])) for c in cats}
+    n = max(n, sum(floor.values()))
     quota = {c: n * len(by_cat[c]) / total for c in cats}
-    alloc = {c: max(1, int(quota[c])) for c in cats}
+    alloc = {c: max(floor[c], int(quota[c])) for c in cats}
     # Hand out what is left by largest remainder; take back (from categories
-    # above 1) by smallest remainder if the 1-per-category floor overshot.
+    # above their floor) by smallest remainder if the floors overshot.
     by_remainder = sorted(cats, key=lambda c: (-(quota[c] - int(quota[c])), c))
     while sum(alloc.values()) < n:
         c = next(c for c in by_remainder if alloc[c] < len(by_cat[c]))
@@ -158,14 +171,15 @@ def stratified_subset(items, n, seed=SUBSET_SEED):
         by_remainder.remove(c)
         by_remainder.append(c)
     while sum(alloc.values()) > n:
-        c = next(c for c in reversed(by_remainder) if alloc[c] > 1)
+        c = next(c for c in reversed(by_remainder) if alloc[c] > floor[c])
         alloc[c] -= 1
         by_remainder.remove(c)
         by_remainder.insert(0, c)
     rng = random.Random(seed)
     chosen = []
     for c in cats:
-        chosen += rng.sample(sorted(by_cat[c]), alloc[c])
+        rest = [q for q in sorted(by_cat[c]) if q not in keep]
+        chosen += kept[c] + rng.sample(rest, alloc[c] - len(kept[c]))
     return sorted(chosen), alloc
 
 
@@ -208,7 +222,7 @@ def done_pairs(raw_out, langs):
 
 
 def main():
-    langs, system, tag, limit = parse_args()
+    langs, system, tag, limit, keep_done = parse_args()
     raw_out = RESULTS_DIR / f"proxlite_raw.{tag}.jsonl" if tag else RAW_OUT
     props_out = RESULTS_DIR / f"server_props.{tag}.json" if tag else PROPS_OUT
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -224,13 +238,18 @@ def main():
 
     items = load_items()
     qids = sorted(items["en"])
-    if limit is not None:
-        qids, alloc = stratified_subset(items["en"], limit)
-        subset_out = RESULTS_DIR / f"proxlite_subset_{limit}.txt"
-        subset_out.write_text("".join(f"{q}\n" for q in qids), encoding="utf-8")
-        log(f"--limit {limit}: {len(qids)} ids -> {subset_out.name}; per category "
-            + ", ".join(f"{c}={k}" for c, k in alloc.items()))
     done = done_pairs(raw_out, langs)
+    if limit is not None:
+        keep = frozenset(q for q in qids if all((q, l) in done for l in langs)) \
+            if keep_done else frozenset()
+        qids, alloc = stratified_subset(items["en"], limit, keep=keep)
+        name = f"proxlite_subset_{len(qids)}_keepdone.txt" if keep_done \
+            else f"proxlite_subset_{limit}.txt"
+        subset_out = RESULTS_DIR / name
+        subset_out.write_text("".join(f"{q}\n" for q in qids), encoding="utf-8")
+        log(f"--limit {limit}: {len(qids)} ids -> {subset_out.name}"
+            + (f" ({len(keep)} finished ids kept)" if keep_done else "")
+            + "; per category " + ", ".join(f"{c}={k}" for c, k in alloc.items()))
     pending = [(q, l) for q in qids for l in langs if (q, l) not in done]
     total = len(qids) * len(langs)
     log(f"question_id {qids[0]}..{qids[-1]} ({len(qids)} ids), langs {langs}; "
