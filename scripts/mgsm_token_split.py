@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Exact reasoning vs answer token counts for results/mgsm_raw.jsonl.
+"""Exact reasoning vs answer token counts for results/mgsm_raw.jsonl
+(or --raw PATH, e.g. a tagged MGSM run or results/belebele_raw.jsonl).
 
 For each record, POSTs reasoning_content and content separately to the
 server's /tokenize (no special tokens added; empty text counts 0 without a
 request), 0.2 s apart, and appends {id, lang, reasoning_tokens,
-answer_tokens} to results/mgsm_token_split.jsonl. Resumable: skips (id, lang)
+answer_tokens} to results/mgsm_token_split.jsonl (default; with --raw,
+<bench>_raw[.tag].jsonl -> <bench>_token_split[.tag].jsonl next to it, or
+--out PATH). Resumable: skips (id, lang)
 already in the output. Safety: stops if any /tokenize call takes over 1 s
 (the server is shared with a running benchmark).
 """
+import argparse
 import json
 import sys
 import time
@@ -34,7 +38,21 @@ def count(text):
     return len(r.json()["tokens"]), dt
 
 
+def default_out(raw):
+    """<bench>_raw[.tag].jsonl -> <bench>_token_split[.tag].jsonl."""
+    if "_raw" not in raw.name:
+        sys.exit(f"cannot derive an output name from {raw.name}; pass --out")
+    return raw.with_name(raw.name.replace("_raw", "_token_split", 1))
+
+
 def main():
+    global RAW, OUT
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--raw", type=Path, default=RAW)
+    ap.add_argument("--out", type=Path)
+    args = ap.parse_args()
+    RAW = args.raw
+    OUT = args.out or default_out(RAW)
     done = set()
     if OUT.exists():
         for line in OUT.open(encoding="utf-8"):
@@ -45,7 +63,7 @@ def main():
                 pass
     recs = [json.loads(l) for l in RAW.open(encoding="utf-8") if l.strip()]
     todo = [r for r in recs if (r["id"], r["lang"]) not in done]
-    print(f"{len(done)} done, {len(todo)} to tokenize", flush=True)
+    print(f"{RAW.name} -> {OUT.name}: {len(done)} done, {len(todo)} to tokenize", flush=True)
     slowest = 0.0
     for k, r in enumerate(todo, 1):
         rt, t1 = count(r.get("reasoning_content"))
