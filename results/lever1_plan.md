@@ -27,6 +27,9 @@ or `proxlite_gate.sh` is alive; `--dry-run` available):
 3. `mgsm_token_split.py --raw results/mgsm_raw.plain.jsonl`
    → `results/mgsm_token_split.plain.jsonl`: exact reasoning tokens via
    `/tokenize` (0.2 s apart, stops if a call takes over 1 s).
+4. `lever1_decision.py` → `results/lever1_decision.txt`: pass/fail for each
+   of (a)–(d) with the numbers, and the overall verdict. Offline, from the
+   files above.
 
 **en is the control:** the prompt must reduce the es-specific excess, not
 just shorten reasoning everywhere.
@@ -42,7 +45,7 @@ just shorten reasoning everywhere.
 
 ## Decision rule (fixed)
 
-**SUCCESS only if all three hold:**
+**SUCCESS only if all four hold:**
 
 - **(a) Gap halves.** The mean over the 250 ids of (es − en) reasoning tokens
   under the prompt, from `mgsm_token_split.plain.jsonl`, is **≤ 57** (half of
@@ -53,6 +56,17 @@ just shorten reasoning everywhere.
 - **(c) en accuracy holds.** en accuracy under the prompt is **not
   significantly lower** than the en baseline. This fails only if plain en
   accuracy < 97.6% **and** paired exact McNemar p ≤ 0.05.
+- **(d) The excess is es-specific.** The es/en ratio of mean reasoning tokens
+  under the prompt (mean es ÷ mean en over the same 250 ids, from
+  `mgsm_token_split.plain.jsonl`) is **≤ 1.25** (baseline 1.50).
+
+*Amendment, 2026-10-01, before any lever-1 data existed* (no
+`mgsm_raw.plain.jsonl` had been produced; the run had not started): criterion
+(d) was added and made binding. Reason: (a) alone measures an absolute token
+gap, so a prompt that shortened en and es reasoning by the same proportion
+would pass it without touching the es-specific excess. For example, halving
+both gives a gap of 57 but the same 1.50 ratio. (d) requires the es excess
+to shrink relative to en, as "en is the control" intends.
 
 Scoring as in `score_mgsm.py`: last number in `content` equals gold;
 unparsed or truncated output counts as wrong. McNemar is the two-sided exact
@@ -62,8 +76,7 @@ test already used there.
 **No prompt-tuning loops:** no second prompt wording under lever 1.
 
 Reported alongside, not part of the decision:
-- mean en and es reasoning tokens, and the es/en ratio (the baseline is 1.50;
-  shows whether the prompt mainly shortened both languages)
+- mean en and es reasoning tokens
 - median per-id gap
 - paired Wilcoxon on per-id es − en differences
 - finish_reason=length counts
@@ -73,9 +86,8 @@ Reported alongside, not part of the decision:
 - Sampling is at temperature 1.0. Part of any baseline-vs-plain difference is
   run-to-run noise, and there is no repeat baseline to measure that noise
   floor. McNemar covers it for accuracy; criterion (a) does not.
-- Criterion (a) uses an absolute token gap. A prompt that shortened all
-  reasoning in proportion would also shrink it. The es/en ratio above is
-  reported to show whether that happened, but it is not part of the rule.
+- Criterion (a) uses an absolute token gap, which a proportional shortening
+  of all reasoning would also shrink; criterion (d) guards against that.
 
 ## Timing
 

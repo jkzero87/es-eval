@@ -7,8 +7,10 @@
 #      --no-tokenize (exact counts come from step 3) -> results/lever1_score.txt
 #   3. mgsm_token_split.py --raw results/mgsm_raw.plain.jsonl
 #      -> results/mgsm_token_split.plain.jsonl (/tokenize, 1 s safeguard)
+#   4. lever1_decision.py -> results/lever1_decision.txt (and printed):
+#      pass/fail per criterion (a)-(d) and the verdict; offline
 # Refuses to start while any run_*.py, chain_*.sh or proxlite_gate.sh is alive.
-# Steps 2-3 run only if step 1 left all 500 records.
+# Steps 2-4 run only if step 1 left all 500 records.
 #
 # Usage:
 #   scripts/run_lever1.sh --dry-run      # guard check + commands, runs nothing
@@ -34,6 +36,7 @@ log() { echo "[$(date +%Y-%m-%dT%H:%M:%S)] lever1: $*"; }
 CMD_RUN=("$PY" scripts/run_mgsm.py --langs en,es --system prompts/plain_reading.txt --tag "$TAG")
 CMD_SCORE=("$PY" scripts/score_mgsm.py --raw "$RAW" --baseline results/mgsm_raw.jsonl --no-tokenize)
 CMD_SPLIT=("$PY" scripts/mgsm_token_split.py --raw "$RAW")
+CMD_DECIDE=("$PY" scripts/lever1_decision.py --raw "$RAW" --split results/mgsm_token_split.$TAG.jsonl)
 
 busy=$( { pgrep -af "$RUNNER_RE"; pgrep -af "$WATCHER_RE"; } | grep -v "run_lever1" )
 if [ -n "$busy" ]; then
@@ -46,7 +49,8 @@ fi
 
 if [ $DRY -eq 1 ]; then
     log "(dry run) guard clear; would run:"
-    printf '    %s\n' "${CMD_RUN[*]}" "${CMD_SCORE[*]} > results/lever1_score.txt" "${CMD_SPLIT[*]}"
+    printf '    %s\n' "${CMD_RUN[*]}" "${CMD_SCORE[*]} > results/lever1_score.txt" "${CMD_SPLIT[*]}" \
+        "${CMD_DECIDE[*]} | tee results/lever1_decision.txt"
     [ -e "$RAW" ] && log "(dry run) note: $RAW exists ($(wc -l < "$RAW") lines); run_mgsm.py resumes it"
     exit 0
 fi
@@ -75,4 +79,7 @@ log "step 2: ${CMD_SCORE[*]} > results/lever1_score.txt"
 
 log "step 3: ${CMD_SPLIT[*]}"
 "${CMD_SPLIT[@]}" || { log "token split stopped (see above); rerun this script to resume"; exit 1; }
-log "done; apply the decision rule in results/lever1_plan.md"
+log "step 4: ${CMD_DECIDE[*]} | tee results/lever1_decision.txt"
+"${CMD_DECIDE[@]}" | tee results/lever1_decision.txt
+[ "${PIPESTATUS[0]}" -eq 0 ] || { log "no verdict (see above)"; exit 1; }
+log "done"
