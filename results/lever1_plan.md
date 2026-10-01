@@ -94,6 +94,22 @@ Reported alongside, not part of the decision:
 The guard keeps lever 1 from starting until Belebele, ProX-Lite (and its
 gate) have all finished, so no earlier than the morning of 2026-10-02.
 
+## Schedule (constraint added 2026-10-01, 17:15)
+
+- **Daytime only.** The PC is turned off around 19:00 and nothing runs
+  overnight. Every run must finish or be stopped by **18:55**.
+- **ProX-Lite** was stopped at 18:55 on 2026-10-01 by `scripts/stop_at.sh`, with
+  a cut partial last line moved to `results/proxlite_raw.interrupted.jsonl`. It
+  resumes the next day from where it stopped (`run_proxlite.py` skips finished
+  id+lang pairs). About 1,700 records remain; at the observed 16–23 s per
+  record that is roughly 8–11 h, so it spans more than one day. Each day's run
+  needs its own `stop_at.sh 18:55 <PID>`.
+- **Lever 1** (500 MGSM records at ~9 s ≈ 75 min, plus ~4 min token split)
+  needs about 1.5 h. Its guard refuses to start while ProX-Lite runs, so it
+  needs its own window: start it no later than ~17:15 to finish by 18:55, or
+  run it first thing in the morning and resume ProX-Lite after. The order
+  between the two is open; the decision rule above does not depend on it.
+
 ## Follow-up: does the reasoning gap appear with good translations?
 
 After Belebele finishes (1464/1464; `run_belebele.py` exited), run the same
