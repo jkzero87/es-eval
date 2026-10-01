@@ -11,6 +11,13 @@
 - Reasoning tokens counted via POST /tokenize (skip with --no-tokenize).
 - --raw PATH scores another file (e.g. a tagged run); --baseline PATH adds a
   paired baseline-vs-this table per language with exact McNemar p.
+- --subset FILE scores only ids listed in FILE (one per line, e.g.
+  results/proxlite_subset_<n>_keepdone.txt) that have all three languages.
+  Without it, a warning is printed if a *_keepdone.txt subset file sits next
+  to the raw file (the run was cut by proxlite_gate.sh).
+- Category-weighted accuracy per language: per-category accuracy weighted by
+  the category's share of the full 588-id test set (renormalized over the
+  categories present). Paired McNemar always uses the raw paired counts.
 """
 import argparse
 import json
@@ -25,6 +32,16 @@ from score_mgsm import DETECT_COLS, LANGS, TOKENIZE_URL, detect, mcnemar_exact, 
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_IN = ROOT / "results" / "proxlite_raw.jsonl"
+
+# Category sizes of the full test set (li-lab/MMLU-ProX-Lite, test, revision
+# e82aafb9, identical in en/es/zh): weights for the category-weighted accuracy.
+FULL_CATEGORY_COUNTS = {
+    "biology": 36, "business": 40, "chemistry": 56, "computer science": 20,
+    "economics": 42, "engineering": 48, "health": 35, "history": 19, "law": 48,
+    "math": 68, "other": 46, "philosophy": 25, "physics": 65, "psychology": 40,
+}
+FULL_N = sum(FULL_CATEGORY_COUNTS.values())
+assert FULL_N == 588
 
 # Marker, optionally wrapped in markdown: "**Answer:**", "## Respuesta:", "答案：".
 MARKER_RE = re.compile(r"(?:(?i:answer|respuesta)|答案)\s*(?:\*\*|__)?\s*[:：]")
@@ -48,6 +65,29 @@ def correct(record):
     return pred is not None and pred == record.get("gold")
 
 
+def weighted_accuracy(cat):
+    """Sum over present categories of full-set share * category accuracy,
+    shares renormalized over the categories present. Returns (acc, n_cats)."""
+    present = [c for c, (_, n) in cat.items() if n and c in FULL_CATEGORY_COUNTS]
+    total = sum(FULL_CATEGORY_COUNTS[c] for c in present)
+    if not total:
+        return float("nan"), 0
+    return sum(FULL_CATEGORY_COUNTS[c] / total * cat[c][0] / cat[c][1] for c in present), len(present)
+
+
+def subset_filter(records, path):
+    """Keep records whose id is listed in PATH and present in all LANGS."""
+    wanted = {int(x) for x in path.read_text(encoding="utf-8").split()}
+    langs_by_id = {}
+    for rec in records:
+        if rec["id"] in wanted:
+            langs_by_id.setdefault(rec["id"], set()).add(rec["lang"])
+    keep = {i for i, ls in langs_by_id.items() if ls >= set(LANGS)}
+    print(f"--subset {path.name}: {len(keep)}/{len(wanted)} listed ids have all "
+          f"{len(LANGS)} langs; scoring only those")
+    return [r for r in records if r["id"] in keep]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw", type=Path, default=RAW_IN)
@@ -55,11 +95,19 @@ def main():
                     help="skip /tokenize calls (reasoning tokens reported as nan)")
     ap.add_argument("--baseline", type=Path, metavar="PATH",
                     help="pair against this raw file (same id + lang), e.g. results/proxlite_raw.jsonl")
+    ap.add_argument("--subset", type=Path, metavar="FILE",
+                    help="score only ids listed in FILE that have all three langs")
     args = ap.parse_args()
 
     if not args.raw.exists():
         print(f"no {args.raw} yet", file=sys.stderr)
         sys.exit(1)
+
+    if args.subset is None:
+        cut = sorted(p.name for p in args.raw.parent.glob("proxlite_subset_*_keepdone.txt"))
+        if cut:
+            print(f"WARNING: {', '.join(cut)} exists (run cut to a subset); scoring every "
+                  f"record in {args.raw.name}; pass --subset to score only the subset")
 
     records = []
     with args.raw.open(encoding="utf-8") as f:
@@ -67,6 +115,8 @@ def main():
             line = line.strip()
             if line:
                 records.append(json.loads(line))
+    if args.subset is not None:
+        records = subset_filter(records, args.subset)
     print(f"scored {len(records)} records so far")
 
     per_lang = {l: {
@@ -131,6 +181,16 @@ def main():
               f"{med(b['completion_tokens']):>10.0f} {med(b['reasoning_tokens']):>12.0f} "
               f"{med(b['pps']):>9.2f} {mtp:>9.4f} {pct(b['length'], b['n']):>8.1f}")
 
+    print(f"\n=== Category-weighted accuracy (weights = category share of the full {FULL_N} ids) ===")
+    print(f"{'lang':<5} {'n':>4} {'acc':>7} {'w_acc':>7} {'cats':>6} {'min n/cat':>10}")
+    for l in LANGS:
+        b = per_lang[l]
+        acc = b["correct"] / b["n"] if b["n"] else float("nan")
+        wacc, ncat = weighted_accuracy(b["cat"])
+        min_n = min((n for _, n in b["cat"].values()), default=0)
+        print(f"{l:<5} {b['n']:>4} {acc:>7.4f} {wacc:>7.4f} {f'{ncat}/{len(FULL_CATEGORY_COUNTS)}':>6} "
+              f"{min_n:>10}")
+
     for field, title in (("reasoning_lang", "reasoning_content"), ("content_lang", "content")):
         print(f"\n=== prompt-language x detected language of {title} ===")
         print(f"{'prompt':<8} " + "".join(f"{c:>8}" for c in DETECT_COLS))
@@ -140,13 +200,14 @@ def main():
 
     print("\n=== Per-category accuracy (n) ===")
     cats = sorted({c for l in LANGS for c in per_lang[l]["cat"]})
-    print(f"{'category':<18} " + "".join(f"{l:>14}" for l in LANGS))
+    print(f"{'category':<18} " + "".join(f"{l:>14}" for l in LANGS) + f"{'full n':>8}")
     for c in cats:
         cells = []
         for l in LANGS:
             k, n = per_lang[l]["cat"].get(c, (0, 0))
             cells.append(f"{k / n:.3f} ({n:>3})" if n else "—")
-        print(f"{c:<18} " + "".join(f"{x:>14}" for x in cells))
+        print(f"{c:<18} " + "".join(f"{x:>14}" for x in cells)
+              + f"{FULL_CATEGORY_COUNTS.get(c, '?'):>8}")
 
     print("\n=== Paired vs en (ids run in both languages; unparsed = wrong) ===")
     print(f"{'pair':<9} {'n':>4} {'both✓':>6} {'both✗':>6} {'en✓ x✗':>7} {'x✓ en✗':>7} {'McNemar p':>10}")
