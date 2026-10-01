@@ -4,7 +4,7 @@
 - Field inventory (which usage/timings fields exist, what is missing).
 - On ids present in all three languages: mean/median of prompt tokens
   (total and actually prefilled, i.e. not served from the prompt cache),
-  completion tokens, estimated reasoning vs answer tokens, prefill ms,
+  completion tokens, reasoning vs answer tokens, prefill ms,
   generation ms, generation tokens/s, MTP acceptance, wall, overhead.
 - Decomposition of the mean wall-time gap X vs en into
   (a) more completion tokens, (b) slower generation, (c) prefill, plus
@@ -17,11 +17,17 @@
   exact p (dynamic programming over doubled ranks, conditional on ties)
   and normal approximation; no scipy needed.
 
-The records carry no reasoning/answer token split (no
-completion_tokens_details) and tokenizing offline is not possible here, so
-the split is estimated by character share of reasoning_content vs content.
+- Completion-token gap X vs en split into reasoning / final answer / other
+  (think tags, EOS: completion - reasoning - answer). The answer part splits
+  further, midpoint rule on mean answer tokens = mean chars * (sum tokens /
+  sum chars), into "says more" (more characters) vs "costs more per
+  character" (tokenizer). Paired Wilcoxon on per-id reasoning tokens.
 
-Writes results/latency_breakdown.md. Never talks to the server.
+The records carry no reasoning/answer token split (no
+completion_tokens_details); exact counts come from
+results/mgsm_token_split.jsonl (scripts/mgsm_token_split.py, /tokenize).
+
+Writes results/latency_breakdown.md. This script never talks to the server.
 """
 import json
 import math
@@ -31,6 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "results" / "mgsm_raw.jsonl"
+SPLIT = ROOT / "results" / "mgsm_token_split.jsonl"
 OUT = ROOT / "results" / "latency_breakdown.md"
 LANGS = ["en", "es", "zh"]
 EXPECTED_TIMINGS = ["prompt_n", "prompt_ms", "predicted_n", "predicted_ms", "draft_n",
@@ -123,26 +130,35 @@ def main():
     w(f"- every field above is present in all {len(recs)} records; "
       f"`predicted_n == completion_tokens` in {consistent_n}/{len(recs)}, "
       f"`prompt_n + cache_n == prompt_tokens` in {consistent_p}/{len(recs)}.")
-    w(f"- **missing:** {', '.join(f'`{m}`' for m in missing) or 'none'}. There is no reasoning/answer "
-      f"token split. Exact counts would need `/tokenize` (excluded: no server requests) or an offline "
-      f"tokenizer (the local `llama-tokenize` build segfaults in vocab-only mode with the GPU hidden; "
-      f"no Python tokenizer is installed). The split below is an **estimate**: each record's "
-      f"completion tokens divided by the character share of `reasoning_content` vs `content`.")
+    w(f"- **missing:** {', '.join(f'`{m}`' for m in missing) or 'none'}, so the records carry no "
+      f"reasoning/answer token split. Exact counts were obtained separately: "
+      f"`scripts/mgsm_token_split.py` sent `reasoning_content` and `content` of every record to the "
+      f"server's `/tokenize` (no special tokens) → `results/mgsm_token_split.jsonl`. *Other* = "
+      f"completion − reasoning − answer (think tags, EOS, and any token-boundary effects).")
     w(f"- `prompt_ms` covers only the `prompt_n` tokens actually prefilled; the rest "
       f"(`cache_n`) came from the prompt cache. `wall` (client-side) also includes HTTP/JSON and "
       f"sampling time outside `prompt_ms + predicted_ms`, reported as *overhead*.")
     w(f"- `finish_reason=length` (hit max_tokens): {', '.join(f'id={i} {l}' for i, l in length) or 'none'}; "
       f"kept in all numbers.\n")
 
+    split = {}
+    for line in SPLIT.open(encoding="utf-8"):
+        rec = json.loads(line)
+        split[(rec["id"], rec["lang"])] = rec
+    lacking = [k for k in ((i, l) for i in ids for l in LANGS) if k not in split]
+    if lacking:
+        sys.exit(f"{SPLIT.name} lacks {len(lacking)} paired records (e.g. {lacking[:3]}); "
+                 f"run scripts/mgsm_token_split.py first")
+
     # 2. Per-language stats.
     stats = {}
     for l in LANGS:
         rs = [by[(i, l)] for i in ids]
         comp = [r["usage"]["completion_tokens"] for r in rs]
-        rc = [len(r.get("reasoning_content") or "") for r in rs]
-        cc = [len(r.get("content") or "") for r in rs]
-        reas = [c * a / (a + b) if a + b else 0 for c, a, b in zip(comp, rc, cc)]
-        ans = [c - x for c, x in zip(comp, reas)]
+        reas = [split[(i, l)]["reasoning_tokens"] for i in ids]
+        ans = [split[(i, l)]["answer_tokens"] for i in ids]
+        other = [c - a - b for c, a, b in zip(comp, reas, ans)]
+        ans_chars = [len(r.get("content") or "") for r in rs]
         pms = [r["timings"]["prompt_ms"] for r in rs]
         gms = [r["timings"]["predicted_ms"] for r in rs]
         wall = [r["wall"] * 1000 for r in rs]
@@ -151,7 +167,9 @@ def main():
         stats[l] = {
             "prompt_tokens": [r["usage"]["prompt_tokens"] for r in rs],
             "prompt_n": [r["timings"]["prompt_n"] for r in rs],
-            "completion": comp, "reasoning_est": reas, "answer_est": ans,
+            "completion": comp, "reasoning": reas, "answer": ans, "other": other,
+            "answer_chars": ans_chars,
+            "answer_tok_per_char": sum(ans) / sum(ans_chars),
             "prefill_ms": pms, "gen_ms": gms,
             "tps": [r["timings"]["predicted_per_second"] for r in rs],
             "mtp_rec": [r["timings"]["draft_n_accepted"] / r["timings"]["draft_n"]
@@ -167,8 +185,10 @@ def main():
         ("prompt tokens (total)", "prompt_tokens", 0),
         ("prompt tokens prefilled (not cached)", "prompt_n", 1),
         ("completion tokens", "completion", 0),
-        ("  reasoning (est., char share)", "reasoning_est", 0),
-        ("  final answer (est., char share)", "answer_est", 0),
+        ("  reasoning (exact, /tokenize)", "reasoning", 0),
+        ("  final answer (exact, /tokenize)", "answer", 0),
+        ("  other (think tags, EOS)", "other", 1),
+        ("final answer characters", "answer_chars", 0),
         ("prefill ms", "prefill_ms", 0),
         ("generation ms", "gen_ms", 0),
         ("generation tokens/s (per record)", "tps", 2),
@@ -231,23 +251,75 @@ def main():
     w("\nExact p computed by enumeration of the signed-rank distribution (doubled ranks, conditional "
       "on ties); the implementation reproduces the textbook n=15 example (W+=96, p=0.0413).\n")
 
+    # 5. Completion-token gap: reasoning vs answer; answer: says more vs costs more per char.
+    w("## 5. Completion-token gap vs en: reasoning vs final answer (means per item)\n")
+    w("| | " + " | ".join(LANGS) + " |")
+    w("|---|" + "---:|" * len(LANGS))
+    w("| final answer tokens per character (Σ/Σ) | "
+      + " | ".join(fmt(stats[l]["answer_tok_per_char"], 4) for l in LANGS) + " |\n")
+    w("| component | " + " | ".join(f"{x} − en: tokens" for x in LANGS[1:]) + " | "
+      + " | ".join(f"{x}: % of gap" for x in LANGS[1:]) + " |")
+    w("|---|" + "---:|" * (2 * (len(LANGS) - 1)))
+    tok = {}
+    for x in LANGS[1:]:
+        e, o = stats["en"], stats[x]
+        m = lambda st, k: statistics.mean(st[k])
+        dr, da, do = (m(o, k) - m(e, k) for k in ("reasoning", "answer", "other"))
+        total = m(o, "completion") - m(e, "completion")
+        c_e, c_o = m(e, "answer_chars"), m(o, "answer_chars")
+        t_e, t_o = e["answer_tok_per_char"], o["answer_tok_per_char"]
+        more = (c_o - c_e) * (t_e + t_o) / 2
+        cost = (t_o - t_e) * (c_e + c_o) / 2
+        assert abs(dr + da + do - total) < 1e-6 * max(1, abs(total))
+        assert abs(more + cost - da) < 1e-6 * max(1, abs(da))
+        tok[x] = {"r": dr, "a": da, "o": do, "more": more, "cost": cost, "total": total,
+                  "dc": c_o - c_e, "t_e": t_e, "t_o": t_o}
+    for label, k in [("reasoning", "r"), ("final answer", "a"),
+                     ("  … says more (more characters)", "more"),
+                     ("  … costs more per character (tokenizer)", "cost"),
+                     ("other (think tags, EOS)", "o"), ("**total completion gap**", "total")]:
+        w(f"| {label} | " + " | ".join(f"{tok[x][k]:+,.1f}" for x in LANGS[1:]) + " | "
+          + " | ".join(fmt(100 * tok[x][k] / tok[x]["total"], 1) for x in LANGS[1:]) + " |")
+    w("")
+    w("The two answer sub-rows split the answer row with the midpoint rule on mean answer tokens = "
+      "mean answer characters × aggregate tokens per character, so they add up exactly. For zh, "
+      "characters are not comparable with Latin-script characters (one Hanzi carries roughly a word), "
+      "so for zh the says-more / costs-more split is arithmetic, not a like-for-like verbosity measure.\n")
+
+    w("## 6. Paired Wilcoxon signed-rank on per-id reasoning tokens\n")
+    w("| pair | n (non-zero) | mean Δ | median Δ (x − en) | W+ | W− | rank-biserial r | exact p | normal p |")
+    w("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+    wr = {}
+    for x in LANGS[1:]:
+        diffs = [o - e for o, e in zip(stats[x]["reasoning"], stats["en"]["reasoning"])]
+        n, wp, wm, pe, pn = wilcoxon(diffs)
+        r = (wp - wm) / (wp + wm)
+        wr[x] = (statistics.median(diffs), pe, r)
+        w(f"| {x} vs en | {n} | {statistics.mean(diffs):+.1f} | {statistics.median(diffs):+.1f} | "
+          f"{wp:,.1f} | {wm:,.1f} | {r:+.3f} | {pe:.3g} | {pn:.3g} |")
+    w("")
+
     # Conclusion.
     es, zh = dec["es"], dec["zh"]
     def share(dd, k):
         v = round(100 * dd[k] / dd["total"])
         return f"{v + 0:d}%" if v else "~0%"
     w("## Conclusion\n")
-    w(f"- **es vs en:** {es['total']/1000:.2f} s slower per item on average; {share(es,'a')} of it is "
-      f"{es['dN']:.0f} more completion tokens, {share(es,'b')} slower generation "
-      f"({es['tps_o']:.1f} vs {es['tps_e']:.1f} tok/s, alongside lower MTP acceptance "
-      f"{stats['es']['mtp']:.3f} vs {stats['en']['mtp']:.3f}), prefill {share(es,'c')}, overhead {share(es,'d')}.")
-    w(f"- **zh vs en:** {zh['total']/1000:.2f} s slower; {share(zh,'a')} tokens ({zh['dN']:.0f} more), "
-      f"{share(zh,'b')} speed ({zh['tps_o']:.1f} vs {zh['tps_e']:.1f} tok/s), prefill {share(zh,'c')}, "
-      f"overhead {share(zh,'d')} (two warm-up outliers at the start of the run, ids 7–8 at "
-      f"37–44 s; every language has two such outliers among ids 7–9, and the medians match). Prefill barely matters because prompts are short (~90 tokens, ~0.27 s), not because of caching.")
-    w(f"- **Per-id tokens/s is lower in both** (es − en median {wil['es'][0]:+.2f} tok/s, Wilcoxon exact "
-      f"p = {wil['es'][1]:.2g}, r = {wil['es'][2]:+.2f}; zh − en {wil['zh'][0]:+.2f}, p = {wil['zh'][1]:.2g}), "
-      f"but it is the second-order effect: the gap is mostly longer outputs, not slower decoding.")
+    te, tz = tok["es"], tok["zh"]
+    pc = lambda dd, k: f"{round(100 * dd[k] / dd['total']):d}%"
+    w(f"- **Wall gap = longer outputs:** es is {es['total']/1000:.2f} s and zh {zh['total']/1000:.2f} s "
+      f"slower per item than en; {share(es,'a')} / {share(zh,'a')} of that is extra completion tokens, "
+      f"{share(es,'b')} / {share(zh,'b')} slower decoding (lower MTP acceptance; per-id tok/s Wilcoxon "
+      f"p = {wil['es'][1]:.2g} / {wil['zh'][1]:.2g}); prefill ~0%.")
+    w(f"- **The extra tokens are mostly reasoning:** of es's {te['total']:+.0f} completion tokens, "
+      f"{pc(te,'r')} are reasoning ({te['r']:+.0f}; per-id Wilcoxon exact p = {wr['es'][1]:.2g}, "
+      f"r = {wr['es'][2]:+.2f}) and {pc(te,'a')} final answer ({te['a']:+.0f}); for zh "
+      f"({tz['total']:+.0f}) it is {pc(tz,'r')} reasoning ({tz['r']:+.0f}, p = {wr['zh'][1]:.2g}) "
+      f"and {pc(tz,'a')} answer ({tz['a']:+.0f}).")
+    w(f"- **Answer part:** es says more ({te['dc']:+.0f} characters, {te['more']:+.0f} tokens) and pays "
+      f"{te['t_o']:.3f} vs {te['t_e']:.3f} tokens per character ({te['cost']:+.0f} tokens); zh's answers "
+      f"are {tz['dc']:+.0f} characters at {tz['t_o']:.3f} tokens/char ({tz['more']:+.0f} / {tz['cost']:+.0f} "
+      f"tokens), not a like-for-like comparison.")
     OUT.write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
 
