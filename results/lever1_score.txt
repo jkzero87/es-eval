@@ -1,0 +1,29 @@
+scored 500 records so far
+
+=== Per language ===
+lang     n     acc  med_compl  med_reas_tk   med_pps   mtp_acc  %length
+en     250  0.9800        332          nan     59.27    0.8234      0.0
+es     250  0.9560        407          nan     57.88    0.7965      0.0
+zh       0     nan        nan          nan       nan       nan      nan
+
+=== prompt-language x detected language of reasoning_content ===
+prompt         en      es      zh   other    none
+en            250       0       0       0       0
+es            243       7       0       0       0
+zh              0       0       0       0       0
+
+=== prompt-language x detected language of content ===
+prompt         en      es      zh   other    none
+en            250       0       0       0       0
+es              0     250       0       0       0
+zh              0       0       0       0       0
+
+=== Paired vs baseline mgsm_raw.jsonl (same id + lang) ===
+lang     n  both✓  both✗  base✓ x✗  x✓ base✗  acc_base  acc_this  McNemar p
+en     250    243      4         1         2    0.9760    0.9800          1
+es     250    235      8         3         4    0.9520    0.9560          1
+zh       0      0      0         0         0       nan       nan          1
+
+=== fertility split (es/en: longer translation vs tokenizer) ===
+  belebele: chars es/en=1.1686  tokens/char en=0.2056 es=0.2303 (+11.99%)  tokens es/en=1.3088  (char factor 1.1686 x tok/char factor 1.1199 = 1.3088)
+  mgsm: chars es/en=1.0677  tokens/char en=0.2536 es=0.2717 (+7.11%)  tokens es/en=1.1437  (char factor 1.0677 x tok/char factor 1.0711 = 1.1437)
