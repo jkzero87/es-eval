@@ -1,6 +1,6 @@
 # es-eval: Spanish vs English vs Chinese on a local 27B model
 
-**Status: CLOSED (2026-10-02).**
+**Status: Fix phase (reopened 2026-10-02):** goal, a Spanish speaker should not pay more tokens than an English speaker. Next: lever 2, translate-then-answer (`results/lever2_plan.md`, pre-registered). The conclusion below is the closed measurement phase.
 
 ## Conclusion
 
