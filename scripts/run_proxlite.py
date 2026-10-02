@@ -22,6 +22,7 @@ records then also carry "system"/"tag"). No flags = the baseline run.
 at least 1 per category, seed 42), each in every selected language; the ids
 are saved to results/proxlite_subset_<N>.txt. Records are unchanged, so a
 later run without --limit on the same file just resumes the rest.
+--ids FILE runs exactly the question_ids listed (one per line) instead.
 --keep-done (with --limit) forces every id already done in all selected
 languages into the subset (raising N if needed; per-category allocation never
 drops below a category's finished ids) and fills the rest as above; the ids
@@ -94,6 +95,8 @@ def parse_args(argv=None):
                     help="run only N question_ids, stratified by category (seed 42)")
     ap.add_argument("--keep-done", action="store_true",
                     help="with --limit: include every id already done in all selected languages")
+    ap.add_argument("--ids", type=Path, metavar="FILE",
+                    help="run exactly these question_ids (one per line; not with --limit)")
     args = ap.parse_args(argv)
     langs = [l for l in LANGS if l in {x.strip() for x in args.langs.split(",")}]
     unknown = {x.strip() for x in args.langs.split(",")} - set(LANGS) - {""}
@@ -107,8 +110,18 @@ def parse_args(argv=None):
         ap.error("--limit must be a positive integer")
     if args.keep_done and args.limit is None:
         ap.error("--keep-done requires --limit")
+    if args.ids is not None and args.limit is not None:
+        ap.error("--ids and --limit are exclusive")
+    ids = None
+    if args.ids is not None:
+        try:
+            ids = sorted({int(x) for x in args.ids.read_text(encoding="utf-8").split()})
+        except (OSError, ValueError) as e:
+            ap.error(f"--ids {args.ids}: {e}")
+        if not ids:
+            ap.error(f"--ids {args.ids}: no ids")
     system = args.system.read_text(encoding="utf-8").strip() if args.system is not None else None
-    return langs, system, args.tag, args.limit, args.keep_done
+    return langs, system, args.tag, args.limit, args.keep_done, ids
 
 
 def load_items():
@@ -222,7 +235,7 @@ def done_pairs(raw_out, langs):
 
 
 def main():
-    langs, system, tag, limit, keep_done = parse_args()
+    langs, system, tag, limit, keep_done, ids = parse_args()
     raw_out = RESULTS_DIR / f"proxlite_raw.{tag}.jsonl" if tag else RAW_OUT
     props_out = RESULTS_DIR / f"server_props.{tag}.json" if tag else PROPS_OUT
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -250,6 +263,12 @@ def main():
         log(f"--limit {limit}: {len(qids)} ids -> {subset_out.name}"
             + (f" ({len(keep)} finished ids kept)" if keep_done else "")
             + "; per category " + ", ".join(f"{c}={k}" for c, k in alloc.items()))
+    if ids is not None:
+        unknown = [q for q in ids if q not in items["en"]]
+        if unknown:
+            raise SystemExit(f"--ids: unknown question_ids {unknown[:10]}")
+        qids = ids
+        log(f"--ids: {len(qids)} ids from the file")
     pending = [(q, l) for q in qids for l in langs if (q, l) not in done]
     total = len(qids) * len(langs)
     log(f"question_id {qids[0]}..{qids[-1]} ({len(qids)} ids), langs {langs}; "
