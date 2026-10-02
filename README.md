@@ -20,6 +20,14 @@
 - Lever 1: `results/lever1_plan.md` (pre-registered), `results/lever1_result.md`, `results/after_lever1.md` (decision tree, pushed before the verdict)
 - ProX-Lite sample: `results/proxlite_sample.md` (design and power limit), `results/proxlite_sample_score.txt`
 
+## License
+
+Code (`scripts/`, `prompts/`) is under the **MIT License** (`LICENSE`,
+copyright 2026 Juan Camilo Bejarano Triana). The audit excerpts of benchmark
+items in `results/mgsm_audit.md`, `results/belebele_audit.md` and
+`results/reasoning_gap_audit.md` are under **CC BY-SA 4.0**, as required by
+the datasets (see DATA_LICENSES below).
+
 ## DATA_LICENSES
 
 This repository contains short excerpts of benchmark items (questions, passages,
