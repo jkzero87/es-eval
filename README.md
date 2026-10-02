@@ -19,3 +19,38 @@
 - Audits: `results/mgsm_audit.md`, `results/belebele_audit.md`, `results/reasoning_gap_audit.md`, `results/latency_breakdown.md`
 - Lever 1: `results/lever1_plan.md` (pre-registered), `results/lever1_result.md`, `results/after_lever1.md` (decision tree, pushed before the verdict)
 - ProX-Lite sample: `results/proxlite_sample.md` (design and power limit), `results/proxlite_sample_score.txt`
+
+## DATA_LICENSES
+
+This repository contains short excerpts of benchmark items (questions, passages,
+options) and model outputs about them in `results/mgsm_audit.md`,
+`results/belebele_audit.md` and `results/reasoning_gap_audit.md`. The raw run
+files with full item text (`results/*_raw*.jsonl`, `data/`) are not tracked.
+The tracked `results/*_token_split*.jsonl` and `results/fertility.csv` hold ids
+and counts only.
+
+| dataset | used via | license | redistribution |
+|---|---|---|---|
+| MGSM (Shi et al., 2022), built on GSM8K (Cobbe et al., 2021) | Hugging Face `juletxara/mgsm` | CC BY-SA 4.0 (dataset card); GSM8K: MIT | allowed with attribution; adaptations under CC BY-SA 4.0 |
+| Belebele (Bandarkar et al., 2024), passages from FLORES-200 | Hugging Face `facebook/belebele` | CC BY-SA 4.0 | allowed with attribution; adaptations under CC BY-SA 4.0 |
+| MMLU-ProX-Lite (Xuan et al., 2025), from MMLU-Pro / MMLU | Hugging Face `li-lab/MMLU-ProX-Lite` (rev. e82aafb) | MIT | allowed with the copyright and license notice |
+
+Because of the ShareAlike terms, the three audit files above, which include
+MGSM and Belebele text, are shared under **CC BY-SA 4.0**. No ProX-Lite item
+text is tracked (only ids and counts).
+
+Attribution:
+- Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush
+  Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das,
+  Jason Wei. *Language Models are Multilingual Chain-of-Thought Reasoners.*
+  arXiv:2210.03057, 2022.
+- Karl Cobbe et al. *Training Verifiers to Solve Math Word Problems.*
+  arXiv:2110.14168, 2021.
+- Lucas Bandarkar, Davis Liang, Benjamin Muller, Mikel Artetxe, Satya Narayan
+  Shukla, Donald Husa, Naman Goyal, Abhinandan Krishnan, Luke Zettlemoyer,
+  Madian Khabsa. *The Belebele Benchmark: a Parallel Reading Comprehension
+  Dataset in 122 Language Variants.* ACL 2024, pp. 749–775.
+- Weihao Xuan, Rui Yang, Heli Qi, Qingcheng Zeng, Yunze Xiao, Aosong Feng,
+  Dairui Liu, Yun Xing, Junjue Wang, Fan Gao, et al. *MMLU-ProX: A
+  Multilingual Benchmark for Advanced Large Language Model Evaluation.*
+  arXiv:2503.10497, 2025.
