@@ -1,0 +1,24 @@
+ProX-Lite sample: 60/60 ids complete in en, es, zh (incomplete, not scored: none)
+
+Token cap (finish=length, counted wrong in the primary score)
+  en: 0
+  es: 2 (ids [636, 651])
+  zh: 1 (ids [651])
+
+PRIMARY: accuracy, capped = wrong, as pre-registered (60 triplets)
+  en: 49/60 = 81.7%
+  es: 50/60 = 83.3%
+  zh: 48/60 = 80.0%
+  es vs en: es − en = +1.7 pts; en✓ es✗ 4, es✓ en✗ 5; exact McNemar p = 1
+  zh vs en: zh − en = -1.7 pts; en✓ zh✗ 3, zh✓ en✗ 2; exact McNemar p = 1
+
+PRIMARY: reasoning tokens (exact, /tokenize), 60 triplets
+  mean: en 1344.0, es 1734.6, zh 1550.4
+  es/en ratio 1.291; zh/en ratio 1.154
+
+SECONDARY (sensitivity only, not pre-registered): excluding triplets where any language hit the cap (58 triplets)
+  en: 48/58 = 82.8%
+  es: 50/58 = 86.2%
+  zh: 47/58 = 81.0%
+  es vs en: es − en = +3.4 pts; en✓ es✗ 3, es✓ en✗ 5; exact McNemar p = 0.727
+  zh vs en: zh − en = -1.7 pts; en✓ zh✗ 2, zh✓ en✗ 1; exact McNemar p = 1
