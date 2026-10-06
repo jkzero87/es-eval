@@ -1,0 +1,46 @@
+[2026-09-30T16:06:39] chain: watching PID 23294 (poll every 30 s)
+[2026-09-30T16:15:54] chain-belebele: waiting for run_belebele.py to start (poll every 30 s)
+[2026-09-30T16:23:31] swap: stopping old watchers 27855 (mgsm) and 30423 (belebele) to install looping/anchored versions; MGSM 23294 not touched
+[2026-09-30T16:23:36] chain: watching PID 23294 (poll every 30 s)
+[2026-09-30T16:23:37] chain-belebele: waiting for run_belebele.py to start (poll every 30 s)
+[2026-09-30T17:36:36] chain: PID 23294 has exited
+[2026-09-30T17:36:36] chain: mgsm_raw.jsonl: 750 unique id+lang records (expected 750)
+[2026-09-30T17:36:36] chain: MGSM complete; launching run_belebele.py
+[2026-09-30T17:36:36] chain: run_belebele.py started as PID 44498
+[2026-09-30T17:36:44] chain-belebele: run_belebele.py is PID 44498; waiting for it to exit
+[2026-10-01T13:49:51] resume: chain was interrupted 2026-09-30 ~17:52 at Belebele 130/1464 (MGSM 750/750 complete); 0 interrupted records quarantined; server :8092 PID 40358 matches manifiestate; relaunching run_belebele.py + chain_after_belebele.sh
+[2026-10-01T13:49:51] resume: run_belebele.py started as PID 41055
+[2026-10-01T13:49:53] chain-belebele: waiting for run_belebele.py to start (poll every 30 s)
+[2026-10-01T13:49:53] chain-belebele: run_belebele.py is PID 41055; waiting for it to exit
+[2026-10-01T13:53:18] resume: verified 3 min in: belebele 148/1464 (+18, 0 FAILED), ~9.8 s/rec -> Belebele ETA ~17:30 today; ProX-Lite (1764) follows via chain
+[2026-10-01T14:16:09] gate: waiting for run_proxlite.py and 30 new records in results/proxlite_raw.jsonl (poll 60s); deadline 2026-10-02T08:00:00
+[2026-10-01T16:51:55] chain-belebele: PID 41055 has exited
+[2026-10-01T16:51:55] chain-belebele: results/belebele_raw.jsonl: 1464 unique id+lang records (expected 1464)
+[2026-10-01T16:51:55] chain-belebele: Belebele complete; launching run_proxlite.py
+[2026-10-01T16:51:55] chain-belebele: run_proxlite.py started as PID 84645
+[2026-10-01T16:52:13] gate: run_proxlite.py is PID 84645; baseline 0 records
+[2026-10-01T17:01:14] gate: PID 84645: 30 new records (30/1764, 10 ids done in all 3 langs); eta.py:
+    file          results/proxlite_raw.jsonl
+    done          30/1764 unique id+lang (1.7%)
+    rate          218 records/h (16.5 s/record; proxlite_run.log, last 30 progress lines)
+    completion    898 tokens mean over last 30
+    finish        2026-10-02 00:56 (1734 left, ~7.9 h from now; last record 17:00:32)
+[2026-10-01T17:01:14] gate: rate 218 records/h; full run (1734 left) projected 2026-10-02 00:56; deadline 2026-10-02 08:00
+[2026-10-01T17:01:14] gate: full run kept
+[2026-10-01T17:13:22] stop_at: will stop PID 84645 (.venv/bin/python scripts/run_proxlite.py ) at 18:55; watching results/proxlite_raw.jsonl
+[2026-10-01T17:48:02] shutdown: PC turning off: SIGTERM to run_proxlite.py PID 84645 (same procedure as stop_at.sh)
+[2026-10-01T17:48:02] shutdown: PID 84645 stopped after 1s
+[2026-10-01T17:48:02] shutdown: last line intact; nothing to move
+[2026-10-01T17:48:02] shutdown: results/proxlite_raw.jsonl: 98 unique id+lang records (of 1764); resume tomorrow with run_proxlite.py (resumable)
+[2026-10-01T17:48:03] shutdown: stop_at.sh PID 92235 stopped (18:55 stop no longer needed)
+[2026-10-02T15:30:12] stop_at: will stop PID 13015 (/usr/bin/zsh -c source ~/.claude/shell-snapshots/snapshot-zsh-1790972971642-eun0b1.sh 2>/dev/null || true && export CLAUDE_CODE_VERSION="2.1.287 (Claude Code)"
+: && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'setsid nohup scripts/run_lever1.sh >> results/lever1_run.log 2>&1 < /dev/null &
+sleep 0; for i in $(seq 30); do P=$(pgrep -f '"'"'python scripts/run_mgsm.py --langs en,es --system prompts/plain_reading.txt --tag plain'"'"'); [ -n "$P" ] && break; sleep 1; done; echo "run_mgsm PID=$P"
+cd ~/es-eval && setsid nohup scripts/stop_at.sh 18:55 $P results/mgsm_raw.plain.jsonl >> results/chain.log 2>&1 < /dev/null &
+sleep 2; tail -2 ~/es-eval/results/chain.log; tail -5 ~/es-eval/results/lever1_run.log; ps -o pid,cgroup:80,cmd -p $P | cat' && pwd -P >| /tmp/claude-f65a-cwd ) at 18:55; watching results/mgsm_raw.plain.jsonl
+[2026-10-02T15:30:33] stop_at: will stop PID 13038 (.venv/bin/python scripts/run_mgsm.py --langs en,es --system prompts/plain_reading.txt --tag plain ) at 18:55; watching results/mgsm_raw.plain.jsonl
+[2026-10-02T16:45:36] stop_at: PID 13038 exited on its own before 18:55; nothing to stop
+[2026-10-02T17:02:50] stop_at: will stop PID 32347 (.venv/bin/python scripts/run_proxlite.py --ids results/proxlite_subset_60_strat.txt ) at 18:55; watching results/proxlite_raw.jsonl
+[2026-10-02T18:43:50] stop_at: will stop PID 32347 (.venv/bin/python scripts/run_proxlite.py --ids results/proxlite_subset_60_strat.txt ) at 19:30; watching results/proxlite_raw.jsonl
+[2026-10-02T18:43:53] stop_at: 18:55 stop for PID 32347 cancelled by hand (Juan moved it to 19:30)
+[2026-10-02T18:47:30] stop_at: PID 32347 exited on its own before 19:30; nothing to stop

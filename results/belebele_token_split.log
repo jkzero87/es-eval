@@ -1,0 +1,16 @@
+belebele_raw.jsonl -> belebele_token_split.jsonl: 0 done, 1464 to tokenize
+100/1464 slowest call so far 3.5 ms
+200/1464 slowest call so far 4.6 ms
+300/1464 slowest call so far 4.9 ms
+400/1464 slowest call so far 5.8 ms
+500/1464 slowest call so far 5.8 ms
+600/1464 slowest call so far 5.9 ms
+700/1464 slowest call so far 5.9 ms
+800/1464 slowest call so far 6.6 ms
+900/1464 slowest call so far 6.6 ms
+1000/1464 slowest call so far 6.6 ms
+1100/1464 slowest call so far 6.6 ms
+1200/1464 slowest call so far 7.4 ms
+1300/1464 slowest call so far 7.4 ms
+1400/1464 slowest call so far 7.4 ms
+done: 1464 records; slowest call 7.4 ms

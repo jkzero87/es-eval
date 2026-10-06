@@ -1,4 +1,4 @@
-Fix phase (reopened 2026-10-02). First GPU job 2026-10-03: write and commit scripts/run_lever2.py, then run lever 2 per results/lever2_plan.md.
+Fix phase (reopened 2026-10-02). Status 2026-10-06: lever 2 is planned (results/lever2_plan.md, pre-registered) and not started; scripts/run_lever2.py does not exist yet. Next GPU job: write and commit scripts/run_lever2.py, then run lever 2 per the plan.
 
 ## End-of-session routine
 
