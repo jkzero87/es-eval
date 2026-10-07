@@ -1,4 +1,6 @@
-Fix phase (reopened 2026-10-02). Status 2026-10-06: lever 2 is planned (results/lever2_plan.md, pre-registered) and not started; scripts/run_lever2.py does not exist yet. Next GPU job: write and commit scripts/run_lever2.py, then run lever 2 per the plan.
+**Closed 2026-10-07.** Fix phase closed: prompt (lever 1, FAIL) and translation (lever 2, stopped early by decision at 130/250, 2.15 × en tokens vs a 1.10 × bar; see results/translation_floor.md) levers are ruled out. No further runs planned in this repo. Next step: fine-tuning in https://github.com/jkzero87/es-reasoning-finetune.
+
+(If lever 2 were ever resumed for completeness: `HF_HOME=/home/jkzero/es-eval/.hf_cache setsid nohup .venv/bin/python -u scripts/run_lever2.py >> results/lever2_run.log 2>&1 < /dev/null &` skips the 130 done ids; then `.venv/bin/python scripts/lever2_decision.py`.)
 
 ## End-of-session routine
 

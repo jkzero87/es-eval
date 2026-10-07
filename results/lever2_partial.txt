@@ -1,0 +1,23 @@
+Lever 2 PARTIAL: stopped early by decision at 130/250 (ids 1-130); NOT the pre-registered verdict.
+Baselines below are restricted to the same 130 ids.
+
+                             total tok/q  × en base    es acc
+en baseline                        505.3       1.00  127/130 (en)
+es baseline                        664.3       1.31       122/130
+lever 1 es (plain prompt)          709.0       1.40       124/130
+lever 2 es (translate)            1086.8       2.15       124/130
+
+lever 2 per call (mean prompt+completion): translate_in 159.9, answer 520.4, translate_out 406.5
+lever 2 ratio to es baseline total: 1.64
+lever 2 step-2 English answer accuracy (not decisive): 124/130
+lever 2 capped (length in step 2 or 3): 0 []
+lever 2 wall per question: mean 13.2s, median 11.4s
+
+last number changed in en→es translation (step 2 ≠ step 3): 0 []
+any digit number changed in en→es translation (multiset): 0 []
+any digit number changed in es→en translation (multiset): 11 [3, 7, 16, 20, 63, 71, 78, 89, 96, 111, 120]
+
+(T) mean total ≤ 543.3: 1086.8 (2.15 × en baseline) → FAIL (over by 543.5 tokens, +100%)
+(A) es accuracy vs baseline: 122 → 124/130 (lost 1, gained 3, McNemar p = 0.625) → PASS
+
+No verdict (partial). See results/translation_floor.md: even translate-in + the en baseline answer is above 543.3.

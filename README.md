@@ -1,6 +1,6 @@
 # es-eval: Spanish vs English vs Chinese on a local 27B model
 
-**Status: Fix phase (reopened 2026-10-02):** goal, a Spanish speaker should not pay more tokens than an English speaker. Next: lever 2, translate-then-answer (`results/lever2_plan.md`, pre-registered). The conclusion below is the closed measurement phase.
+**Status: closed (2026-10-07).** Measurement phase and fix phase are both closed. Fix-phase goal was that a Spanish speaker should not pay more tokens than an English speaker; the prompt lever (lever 1) and the translation lever (lever 2) are ruled out (points 5–6). Next step is fine-tuning, in a new repo: [jkzero87/es-reasoning-finetune](https://github.com/jkzero87/es-reasoning-finetune).
 
 ## Conclusion
 
@@ -9,15 +9,18 @@
 3. Cause: reading the 20 largest MGSM gaps, the extra Spanish reasoning is mostly the model second-guessing wording it had read correctly and weighing alternative readings (main cost in 13 of 20). Belebele, with professional translations, shows the same gap, so it is the language, not poor translation.
 4. Running out of tokens (max_tokens cap) happened in Spanish and Chinese but never in English, so it is not Spanish-only. ProX-Lite sample: es 2 (ids 636, 651), zh 1 (id 651), en 0. Outside the sample: MGSM es 120, 215 and ProX-Lite id 80 (es), all Spanish.
 5. Lever 1, a "read words in their plain meaning" system prompt, cut the es−en reasoning gap by 28% (+114.4 → +82.5 tokens; ratio 1.50 → 1.34) without hurting accuracy, but missed the pre-registered targets (gap ≤ 57, ratio ≤ 1.25): **FAIL**, and the lever is closed.
+6. Lever 2, translate-then-answer (es→en, answer in English, en→es; `results/lever2_plan.md`), was **stopped early by decision at 130/250 ids; this is not the pre-registered verdict.** On those 130 ids it cost 1086.8 tokens per question, 2.15 × the English baseline (bar: ≤ 543.3 = 1.10 ×) and 1.64 × the plain Spanish baseline, with accuracy intact (124/130 vs es baseline 122/130, McNemar p = 0.63; no number changed in either translation beyond formatting). `results/translation_floor.md` shows why no translation lever can pass: the translate-in call alone (≈ 158 tokens) is about 3× the 49-token allowance, so even translate-in plus the English baseline answer (626) is above the bar. Partial report: `results/lever2_partial.txt`.
 
 ## Future work
 
-- Quantization comparison (current IQ3_S vs IQ4_XS, `scripts/run_quant_compare.sh`, MGSM first, ≈ 2–2.5 h): does the Spanish/Chinese reasoning excess or accuracy deficit shrink at higher precision? Plan in `results/after_lever1.md`, branch 3; not scheduled.
+- Fine-tuning (Qwen3-14B, QLoRA) continues in [jkzero87/es-reasoning-finetune](https://github.com/jkzero87/es-reasoning-finetune).
+- Quantization comparison (current IQ3_S vs IQ4_XS, `scripts/run_quant_compare.sh`): not scheduled; the IQ4_XS file was deleted from disk on 2026-10-05 (~14.3 GB to re-download), and that config (UD-IQ4_XS + MTP) hung in an earlier Xid 8 test (local-llm-lab notes, 2026-09-25).
 
 ## Where things are
 
 - Audits: `results/mgsm_audit.md`, `results/belebele_audit.md`, `results/reasoning_gap_audit.md`, `results/latency_breakdown.md`
 - Lever 1: `results/lever1_plan.md` (pre-registered), `results/lever1_result.md`, `results/after_lever1.md` (decision tree, pushed before the verdict)
+- Lever 2: `results/lever2_plan.md` (pre-registered, with addendum), `scripts/run_lever2.py`, `scripts/lever2_decision.py` (`--partial`), `results/mgsm_raw.lever2.jsonl` (130 ids), `results/lever2_partial.txt`, `results/translation_floor.md`
 - ProX-Lite sample: `results/proxlite_sample.md` (design and power limit), `results/proxlite_sample_score.txt`
 
 ## License
