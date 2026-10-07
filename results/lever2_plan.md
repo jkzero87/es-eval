@@ -61,3 +61,20 @@ Reported alongside: mean tokens per call (translate in, answer, translate
 out), ratio to the es baseline total, wall time per question, number of
 answers whose numbers changed in translation (step-2 last number ≠ step-3
 last number).
+
+## Addendum 2026-10-07 16:21 (during the run, before the verdict; rule above unchanged)
+
+Written while the lever-2 run was in progress (16 of 250 ids done, no
+scoring run). The plan says "unparsed or capped = wrong" but does not say
+which call's cap counts. `scripts/lever2_decision.py` applies: **a token-cap
+hit (`finish_reason == "length"`) in step 2 (answer) or step 3 (translate
+out) = wrong** for the decisive Spanish score; the step-2 English score
+counts only a step-2 cap. Step 1 is not checked for a cap (a capped
+translation would show up as a wrong answer anyway). This is the one rule
+not in the original text. It does not move the baseline: the es baseline's
+two capped answers (ids 120, 215) are already wrong under the last-number
+rule, so 238/250 is unchanged.
+
+Extra, reported only (not decisive): besides the plan's "step-2 last number
+≠ step-3 last number", the script also lists ids whose multiset of digit
+numbers changed in either translation (es→en question, en→es answer).
