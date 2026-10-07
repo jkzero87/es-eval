@@ -28,17 +28,23 @@
 Code (`scripts/`, `prompts/`) is under the **MIT License** (`LICENSE`,
 copyright 2026 Juan Camilo Bejarano Triana). The audit excerpts of benchmark
 items in `results/mgsm_audit.md`, `results/belebele_audit.md` and
-`results/reasoning_gap_audit.md` are under **CC BY-SA 4.0**, as required by
-the datasets (see DATA_LICENSES below).
+`results/reasoning_gap_audit.md`, and the tracked raw run files about MGSM and
+Belebele (`results/mgsm_raw*.jsonl`, `results/belebele_raw.jsonl`), are under
+**CC BY-SA 4.0**, as required by the datasets (see DATA_LICENSES below).
 
 ## DATA_LICENSES
 
 This repository contains short excerpts of benchmark items (questions, passages,
 options) and model outputs about them in `results/mgsm_audit.md`,
 `results/belebele_audit.md` and `results/reasoning_gap_audit.md`. The raw run
-files with full item text (`results/*_raw*.jsonl`, `data/`) are not tracked.
-The tracked `results/*_token_split*.jsonl` and `results/fertility.csv` hold ids
-and counts only.
+files are tracked as evidence: `results/mgsm_raw.jsonl`,
+`results/mgsm_raw.plain.jsonl`, `results/belebele_raw.jsonl` and
+`results/proxlite_raw.jsonl` hold the model's full outputs (answers and
+reasoning, which often restate the item), not the item text itself;
+`results/mgsm_raw.lever2.jsonl` also holds the full MGSM Spanish question and
+its English translation. `data/` is not tracked. The tracked
+`results/*_token_split*.jsonl` and `results/fertility.csv` hold ids and counts
+only.
 
 | dataset | used via | license | redistribution |
 |---|---|---|---|
@@ -46,9 +52,11 @@ and counts only.
 | Belebele (Bandarkar et al., 2024), passages from FLORES-200 | Hugging Face `facebook/belebele` | CC BY-SA 4.0 | allowed with attribution; adaptations under CC BY-SA 4.0 |
 | MMLU-ProX-Lite (Xuan et al., 2025), from MMLU-Pro / MMLU | Hugging Face `li-lab/MMLU-ProX-Lite` (rev. e82aafb) | MIT | allowed with the copyright and license notice |
 
-Because of the ShareAlike terms, the three audit files above, which include
-MGSM and Belebele text, are shared under **CC BY-SA 4.0**. No ProX-Lite item
-text is tracked (only ids and counts).
+Because of the ShareAlike terms, the files above with MGSM or Belebele
+content (the three audit files, `results/mgsm_raw*.jsonl`,
+`results/belebele_raw.jsonl`) are shared under **CC BY-SA 4.0**, with the
+attribution below. No ProX-Lite item text is tracked; `results/proxlite_raw.jsonl`
+holds only model outputs about ProX-Lite items (MIT dataset).
 
 Attribution:
 - Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush
